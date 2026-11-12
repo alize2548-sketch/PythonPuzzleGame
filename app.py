@@ -1,4 +1,4 @@
-    # -----------------------------
+        # -----------------------------
     # CHECK ANSWER AND SKIP BUTTON
     # -----------------------------
     col1, col2 = st.columns(2)
@@ -123,4 +123,3 @@ st.markdown("""
 <p>Keep practising and improve your vocabulary!</p>
 </div>
 """, unsafe_allow_html=True)
-
