@@ -1,5 +1,4 @@
 
-
 import streamlit as st
 import random
 
@@ -53,10 +52,10 @@ st.markdown("""
 
 .score-box {
     background-color: #304766;
-    padding: 15px;
+    padding: 15px 5px;
     border-radius: 12px;
     text-align: center;
-    font-size: 20px;
+    font-size: 17px;
 }
 
 .stButton button {
@@ -72,14 +71,16 @@ st.markdown("""
     background-color: #F4A261;
     color: white;
 }
+
 </style>
 """, unsafe_allow_html=True)
 
 
 # -----------------------------
-# WORD DATABASE: 20 EACH
+# WORD DATABASE (20 EACH)
 # -----------------------------
 words = {
+
     "Easy": {
         "APPLE": "A fruit that can be red or green.",
         "HOUSE": "A place where people live.",
@@ -152,74 +153,137 @@ words = {
 
 
 # -----------------------------
+# SESSION STATE INITIALIZATION
+# -----------------------------
+
+defaults = {
+    "score": 0,
+    "rounds": 0,
+    "difficulty": "Easy",
+    "word_deck": [],
+    "word": None,
+    "scrambled": "",
+    "hint": "",
+    "attempted": False,
+    "message": "",
+    "round_id": 0,
+    "review_queue": [],
+    "current_is_review": False
+}
+
+for key, value in defaults.items():
+    if key not in st.session_state:
+        st.session_state[key] = value
+
+
+# -----------------------------
 # GAME FUNCTIONS
 # -----------------------------
 
 def scramble_word(word):
     letters = list(word)
-    scrambled = word
 
-    while scrambled == word:
+    random.shuffle(letters)
+
+    while "".join(letters) == word:
         random.shuffle(letters)
-        scrambled = "".join(letters)
 
-    return scrambled
+    return "".join(letters)
 
 
 def setup_deck():
     """Create a shuffled list of unused words."""
+
     st.session_state.word_deck = list(
         words[st.session_state.difficulty].keys()
     )
+
     random.shuffle(st.session_state.word_deck)
 
 
 def new_word():
-    """Select the next unused word."""
-    if not st.session_state.word_deck:
+    """Choose a new word or a word ready for review."""
+
+    # Reduce waiting time for review words
+    for item in st.session_state.review_queue:
+        item["wait"] -= 1
+
+    # Find words ready for review
+    ready_words = [
+        item for item in st.session_state.review_queue
+        if item["wait"] <= 0
+    ]
+
+    if ready_words:
+
+        item = ready_words[0]
+
+        st.session_state.word = item["word"]
+
+        st.session_state.review_queue.remove(item)
+
+        st.session_state.current_is_review = True
+
+    elif st.session_state.word_deck:
+
+        word = st.session_state.word_deck.pop(0)
+
+        st.session_state.word = word
+
+        st.session_state.current_is_review = False
+
+    elif st.session_state.review_queue:
+
+        # Review remaining words when the normal deck is finished
+        item = st.session_state.review_queue.pop(0)
+
+        st.session_state.word = item["word"]
+
+        st.session_state.current_is_review = True
+
+    else:
+
         st.session_state.word = None
         return
 
-    word = st.session_state.word_deck.pop(0)
+    word = st.session_state.word
 
-    st.session_state.word = word
     st.session_state.scrambled = scramble_word(word)
+
     st.session_state.hint = words[
         st.session_state.difficulty
     ][word]
 
     st.session_state.attempted = False
     st.session_state.message = ""
+
     st.session_state.round_id += 1
 
 
-# -----------------------------
-# SESSION STATE INITIALIZATION
-# -----------------------------
+def reset_game(difficulty):
+    """Reset game when restarting or changing difficulty."""
 
-if "score" not in st.session_state:
+    st.session_state.difficulty = difficulty
+
     st.session_state.score = 0
-
-if "rounds" not in st.session_state:
     st.session_state.rounds = 0
 
-if "difficulty" not in st.session_state:
-    st.session_state.difficulty = "Easy"
+    st.session_state.review_queue = []
 
-if "word_deck" not in st.session_state:
-    st.session_state.word_deck = []
-
-if "word" not in st.session_state:
     st.session_state.word = None
-
-if "attempted" not in st.session_state:
     st.session_state.attempted = False
 
-if "message" not in st.session_state:
-    st.session_state.message = ""
+    setup_deck()
+    new_word()
 
-if "round_id" not in st.session_state:
-    st.session_state.round_id = 0
+
+def add_to_review(word):
+    """Schedule an incorrect or skipped word for review."""
+
+    st.session_state.review_queue.append({
+        "word": word,
+        "wait": 5
+    })
 
 
 # -----------------------------
@@ -247,24 +311,23 @@ st.write("")
 
 difficulty = st.selectbox(
     "Choose Difficulty:",
-    ["Easy", "Medium", "Hard"]
+    ["Easy", "Medium", "Hard"],
+    key="difficulty_selector"
 )
 
-# Reset game when difficulty changes
 if difficulty != st.session_state.difficulty:
+    reset_game(difficulty)
 
-    st.session_state.difficulty = difficulty
-    st.session_state.score = 0
-    st.session_state.rounds = 0
 
-    setup_deck()
-    new_word()
-
-# Initialize the first word
-if not st.session_state.word_deck and st.session_state.word is None:
-    setup_deck()
+# -----------------------------
+# START FIRST WORD
+# -----------------------------
 
 if st.session_state.word is None:
+
+    if not st.session_state.word_deck and not st.session_state.review_queue:
+        setup_deck()
+
     new_word()
 
 
@@ -276,28 +339,53 @@ col1, col2, col3 = st.columns(3)
 
 with col1:
     st.markdown(
-        f'<div class="score-box">🏆 Score: '
-        f'{st.session_state.score}</div>',
+        f'<div class="score-box">🏆 Score<br>'
+        f'<b>{st.session_state.score}</b></div>',
         unsafe_allow_html=True
     )
 
 with col2:
     st.markdown(
-        f'<div class="score-box">📝 Completed: '
-        f'{st.session_state.rounds}</div>',
+        f'<div class="score-box">📝 Correct<br>'
+        f'<b>{st.session_state.rounds}</b></div>',
         unsafe_allow_html=True
     )
 
 with col3:
     st.markdown(
-        f'<div class="score-box">📚 Remaining: '
-        f'{len(st.session_state.word_deck)}</div>',
+        f'<div class="score-box">📚 Remaining<br>'
+        f'<b>{len(st.session_state.word_deck)}</b></div>',
         unsafe_allow_html=True
     )
 
+
+# -----------------------------
+# PROGRESS BAR
+# -----------------------------
+
+completed = st.session_state.rounds
+
+st.write("**Progress**")
+
 st.progress(
-    st.session_state.rounds % 20 / 20
+    min(completed / 20, 1.0)
 )
+
+st.caption(
+    f"{completed} out of 20 words answered correctly"
+)
+
+
+# -----------------------------
+# REVIEW QUEUE COUNTER
+# -----------------------------
+
+if st.session_state.review_queue:
+
+    st.info(
+        f"🔁 Words waiting for another attempt: "
+        f"{len(st.session_state.review_queue)}"
+    )
 
 
 # -----------------------------
@@ -306,21 +394,31 @@ st.progress(
 
 if st.session_state.word is not None:
 
+    # Review label
+    if st.session_state.current_is_review:
+
+        st.info("🔁 REVIEW WORD - Try again!")
+
     st.markdown(f"""
     <div class="puzzle-box">
         <h3>Unscramble This Word!</h3>
+
         <div class="scrambled">
             {st.session_state.scrambled}
         </div>
+
         <p>Can you figure out the correct word?</p>
     </div>
     """, unsafe_allow_html=True)
 
-    # Hint
+
+    # HINT
     with st.expander("💡 Show Hint"):
+
         st.info(st.session_state.hint)
 
-    # Answer input
+
+    # ANSWER INPUT
     answer = st.text_input(
         "Enter your answer:",
         placeholder="Type your word here...",
@@ -328,27 +426,70 @@ if st.session_state.word is not None:
         key=f"answer_{st.session_state.round_id}"
     )
 
-    # Check answer
-    if st.button(
-        "Check Answer",
-        disabled=st.session_state.attempted
-    ):
 
-        if answer.strip().upper() == st.session_state.word:
+    # -----------------------------
+    # CHECK ANSWER AND SKIP BUTTON
+    # -----------------------------
 
-            st.session_state.score += 10
-            st.session_state.rounds += 1
+    col1, col2 = st.columns(2)
+
+    # CHECK ANSWER
+    with col1:
+
+        if st.button(
+            "Check Answer",
+            disabled=st.session_state.attempted
+        ):
+
+            if answer.strip().upper() == st.session_state.word:
+
+                st.session_state.score += 10
+                st.session_state.rounds += 1
+
+                st.session_state.message = (
+                    "🎉 Correct! Excellent work! +10 points"
+                )
+
+                st.session_state.attempted = True
+
+            else:
+
+                correct_word = st.session_state.word
+
+                add_to_review(correct_word)
+
+                st.session_state.message = (
+                    f"❌ Incorrect! The correct answer is "
+                    f"{correct_word}. "
+                    "You can try it again after 5 other words!"
+                )
+
+                st.session_state.attempted = True
+
+            st.rerun()
+
+
+    # SKIP WORD
+    with col2:
+
+        if st.button(
+            "⏭️ Skip Word",
+            disabled=st.session_state.attempted
+        ):
+
+            correct_word = st.session_state.word
+
+            add_to_review(correct_word)
+
             st.session_state.message = (
-                "🎉 Correct! Excellent work!"
+                f"⏭️ Skipped! The correct answer is "
+                f"{correct_word}. "
+                "This word will return after 5 other words!"
             )
+
             st.session_state.attempted = True
 
-        else:
-            st.session_state.message = (
-                "❌ Not quite! Try again."
-            )
-
-        st.rerun()
+            st.rerun()
 
 
 # -----------------------------
@@ -358,35 +499,62 @@ if st.session_state.word is not None:
 if st.session_state.message:
 
     if "Correct" in st.session_state.message:
+
         st.success(st.session_state.message)
-    else:
+
+    elif "Incorrect" in st.session_state.message:
+
         st.error(st.session_state.message)
+
+    else:
+
+        st.warning(st.session_state.message)
 
 
 # -----------------------------
-# NEXT WORD / NEW SET
+# NEXT WORD BUTTON
 # -----------------------------
 
 if st.session_state.attempted:
 
-    if st.session_state.word_deck:
+    if st.button("➡️ Next Word"):
 
-        if st.button("➡️ Next Word"):
-            new_word()
-            st.rerun()
+        new_word()
+        st.rerun()
 
-    else:
 
-        st.success(
-            "🏆 Congratulations! You have completed "
-            "all 20 words in this difficulty!"
-        )
+# -----------------------------
+# GAME COMPLETION
+# -----------------------------
 
-        if st.button("🔄 Start Another Set"):
+if (
+    st.session_state.word is None
+    and not st.session_state.word_deck
+    and not st.session_state.review_queue
+):
 
-            setup_deck()
-            new_word()
-            st.rerun()
+    st.success(
+        "🏆 Congratulations! You completed "
+        "all 20 words and all review words!"
+    )
+
+    st.balloons()
+
+    st.write(
+        f"Your final score: {st.session_state.score}"
+    )
+
+    if st.button("🔄 Start Another Set"):
+
+        st.session_state.score = 0
+        st.session_state.rounds = 0
+
+        st.session_state.review_queue = []
+
+        setup_deck()
+        new_word()
+
+        st.rerun()
 
 
 # -----------------------------
@@ -397,11 +565,7 @@ st.divider()
 
 if st.button("🔄 Restart Game"):
 
-    st.session_state.score = 0
-    st.session_state.rounds = 0
-
-    setup_deck()
-    new_word()
+    reset_game(st.session_state.difficulty)
 
     st.rerun()
 
@@ -414,9 +578,15 @@ st.markdown("""
 <hr>
 
 <div style="text-align:center; color:#BBBBBB;">
+
     <h4>🧩 Word Puzzle Game</h4>
+
     <p>Challenge your brain and have fun learning!</p>
+
     <p>60 words available across 3 difficulty levels.</p>
+
+    <p>Keep practising and improve your vocabulary!</p>
+
 </div>
 """, unsafe_allow_html=True)
 
